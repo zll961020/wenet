@@ -17,11 +17,17 @@
 # limitations under the License.
 
 from wenet.text.tokenize_utils import tokenize_by_bpe_model
+from wenet.text.whisper_tokenizer import WhisperTokenizer
 from typing import Dict, List, Tuple
 from collections import deque
+from typing import Dict, List, Tuple, Optional            # + Optional
+try:                                                     # 新增：检测 graphviz
+    import graphviz
+    _GRAPHVIZ_AVAILABLE = True
+except ImportError:                                      # pragma: no cover
+    _GRAPHVIZ_AVAILABLE = False
 
-
-def tokenize(context_list_path, symbol_table, bpe_model=None):
+def tokenize(context_list_path, symbol_table, bpe_model=None, tokenizer=None):
     """ Read biasing list from the biasing list address, tokenize and convert it
         into token id
     """
@@ -48,11 +54,15 @@ def tokenize(context_list_path, symbol_table, bpe_model=None):
                 if ch == ' ':
                     ch = "▁"
                 tokens.append(ch)
-        for ch in tokens:
-            if ch in symbol_table:
-                labels.append(symbol_table[ch])
-            elif '<unk>' in symbol_table:
-                labels.append(symbol_table['<unk>'])
+        if tokenizer is not None and isinstance(tokenizer, WhisperTokenizer):
+            _, ids = tokenizer.tokenize(context_txt)
+            labels.extend(ids)          # id 本身就是 int，可直接用
+        else:
+            for ch in tokens:
+                if ch in symbol_table:
+                    labels.append(symbol_table[ch])
+                elif '<unk>' in symbol_table:
+                    labels.append(symbol_table['<unk>'])
         context_list.append(labels)
     return context_list
 
@@ -116,7 +126,8 @@ class ContextGraph:
                  context_list_path: str,
                  symbol_table: Dict[str, int],
                  bpe_model: str = None,
-                 context_score: float = 6.0):
+                 context_score: float = 6.0,
+                 tokenizer=None):
         """Initialize a ContextGraph with the given ``context_score``.
 
         A root node will be created (**NOTE:** the token of root is hardcoded to -1).
@@ -126,9 +137,11 @@ class ContextGraph:
             The bonus score for each token(note: NOT for each word/phrase, it means longer  # noqa
             word/phrase will have larger bonus score, they have to be matched though).
         """
+        self.tokenizer = tokenizer
         self.context_score = context_score
         self.context_list = tokenize(context_list_path, symbol_table,
-                                     bpe_model)
+                                     bpe_model, tokenizer)
+        self.inv_sym_table = {v: k for k, v in symbol_table.items()}
         self.num_nodes = 0
         self.root = ContextState(
             id=self.num_nodes,
@@ -263,3 +276,99 @@ class ContextGraph:
         # The score of the fail arc
         score = -state.node_score
         return (score, self.root)
+
+
+# ------------------- 新增：可视化 -------------------
+    def draw(
+        self,
+        title: Optional[str] = None,
+        font: str = "Noto Sans CJK SC"
+    ):
+        """
+        使用 graphviz 将 ContextGraph(Aho-Corasick 自动机) 绘制成有向图。
+
+        节点标签:  id/(node_score, output_score)
+        黑色实线 : 正常 next 转移
+        红色虚线 : fail  失败边
+        绿色点线 : output 输出边
+
+        返回 graphviz.Digraph 对象，可直接 dot.render(...) 导出。
+        """
+        if not _GRAPHVIZ_AVAILABLE:
+            raise ImportError("graphviz is not installed, please `pip install graphviz`")
+
+        graph_attr = {
+            "rankdir": "LR",
+            "size": "8.5,11",
+            "center": "1",
+            "ranksep": "0.3",
+            "nodesep": "0.25",
+            "charset": "utf-8",
+        }
+        if title is not None:
+            graph_attr["label"] = title
+
+        default_node_attr = {
+            "shape": "circle",
+            "fontsize": "12",
+            "fontname": font,
+        }
+        final_node_attr   = {
+            "shape": "doublecircle",
+            "fontsize": "12",
+            "fontname": font,
+        }
+        default_edge_attr = {
+            "fontsize": "12",
+            "fontname": font,
+        }
+
+        dot = graphviz.Digraph(
+            name="ContextGraph",
+            graph_attr=graph_attr,
+            node_attr=default_node_attr,
+            edge_attr=default_edge_attr,
+        )
+
+        visited, queue = set(), deque([self.root])
+        while queue:
+            node = queue.popleft()
+
+            # 1. 打印节点
+            if node.id not in visited:
+                lbl = f"{node.id}/({node.node_score}, {node.output_score})"
+                if node.is_end:
+                    dot.node(str(node.id), label=lbl, **final_node_attr)
+                else:
+                    dot.node(str(node.id), label=lbl)
+                visited.add(node.id)
+
+            # 2. next 边（黑色；标签=token/score）
+            for tok, nxt in node.next.items():
+                if isinstance(self.tokenizer, WhisperTokenizer):
+                    # Whisper: 用 detokenize 把单个 id 反解为字符 组合的id才有结果 还是限制token id
+                    tok_lbl = str(tok)
+                else:
+                    tok_lbl = self.inv_sym_table.get(tok, str(tok))
+                label   = f"{tok_lbl}/{nxt.token_score}"   # ★ 新增：拼上分数
+                dot.edge(str(node.id), str(nxt.id), label=label)   # 默认黑色实线
+                if nxt.id not in visited:
+                    queue.append(nxt)
+
+            # 3. fail 边（红色实线）
+            if node.fail is not None and node.fail.id != node.id:
+                dot.edge(
+                    str(node.id),
+                    str(node.fail.id),
+                    label="ε",
+                    color="red",                    # 红色
+                    style="solid",                  # 实线
+                    arrowhead="normal",             # 有箭头
+                )
+
+            # 4. output 边（绿色点线）
+            if node.output is not None:
+                print(f'output node is not None')
+                dot.edge(str(node.id), str(node.output.id), label="out", color="green", style="dotted", penwidth="2")
+
+        return dot

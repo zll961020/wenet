@@ -18,6 +18,7 @@ import argparse
 import copy
 import logging
 import os
+import sys  
 
 import torch
 import yaml
@@ -193,8 +194,22 @@ def get_args():
 
 def main():
     args = get_args()
-    logging.basicConfig(level=logging.DEBUG,
-                        format='%(asctime)s %(levelname)s %(message)s')
+    # logging.basicConfig(level=logging.DEBUG,
+    #                     format='%(asctime)s %(levelname)s %(message)s')
+    # ---- 日志文件 ----
+    os.makedirs(args.result_dir, exist_ok=True)
+    log_file = os.path.join(
+        args.result_dir,
+        f"log.log")
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[
+            logging.FileHandler(log_file, mode='w', encoding='utf-8'),
+            logging.StreamHandler(sys.stdout)
+        ])
+    logging.info("Arguments: %s", args)
     if args.gpu != -1:
         # remain the original usage of gpu
         args.device = "cuda"
@@ -256,6 +271,7 @@ def main():
 
     context_graph = None
     if 'decoding-graph' in args.context_bias_mode:
+        logging.info(f'building context graph from {args.context_list_path} with score {args.context_graph_score}')
         context_graph = ContextGraph(args.context_list_path,
                                      tokenizer.symbol_table,
                                      configs['tokenizer_conf']['bpe_path'],

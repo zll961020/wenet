@@ -306,12 +306,19 @@ if __name__ == '__main__':
     case_sensitive = False
     max_words_per_line = sys.maxsize
     split = None
+    # -------- hotword related --------
+    hotword_file = ''          # 热词词表文件（可选）
     while len(sys.argv) > 3:
         a = '--maxw='
         if sys.argv[1].startswith(a):
             b = sys.argv[1][len(a):]
             del sys.argv[1]
             max_words_per_line = int(b)
+            continue
+        a = '--hotword='
+        if sys.argv[1].startswith(a):
+            hotword_file = sys.argv[1][len(a):]
+            del sys.argv[1]
             continue
         a = '--rt='
         if sys.argv[1].startswith(a):
@@ -385,7 +392,6 @@ if __name__ == '__main__':
     if not case_sensitive:
         ig = set([w.upper() for w in ignore_words])
         ignore_words = ig
-
     default_clusters = {}
     default_words = {}
 
@@ -411,6 +417,20 @@ if __name__ == '__main__':
             fid = array[0]
             rec_set[fid] = normalize(array[1:], ignore_words, case_sensitive,
                                      split)
+    hotword_seqs = [] 
+    if hotword_file:
+        calculator_hotword = Calculator()
+        with codecs.open(hotword_file, 'r', 'utf-8') as fh:
+            for line in fh:
+                if tochar:
+                    array = characterize(line)
+                else:
+                    array = line.strip().split()
+                if len(array) == 0: continue
+                hotword_seqs.append(normalize(array, ignore_words, case_sensitive, split))
+        if verbose:
+            print(f'Loaded {len(hotword_seqs)} hotwords from {hotword_file}')
+            print(f'Hotword seqs: {hotword_seqs}')
 
     # compute error rate on the interaction of reference file and hyp file
     for line in open(ref_file, 'r', encoding='utf-8'):
@@ -437,6 +457,26 @@ if __name__ == '__main__':
                 default_words[word] = default_cluster_name
 
         result = calculator.calculate(lab, rec)
+        
+        if hotword_seqs:
+            lab_hw_tokens, rec_hw_tokens = [], []
+            lab_aln, rec_aln = result['lab'], result['rec']
+            T = len(lab_aln)
+            for seq in hotword_seqs:
+                L = len(seq)
+                if L == 0 or L > T:
+                    continue
+                i = 0
+                while i <= T - L:
+                    if lab_aln[i:i + L] == seq:          # 完整匹配
+                        lab_hw_tokens.extend(lab_aln[i:i + L])
+                        rec_hw_tokens.extend(rec_aln[i:i + L])
+                        i += L
+                    else:
+                        i += 1
+            if lab_hw_tokens and rec_hw_tokens:
+                result_hotword = calculator_hotword.calculate(lab_hw_tokens, rec_hw_tokens)
+            
         if verbose:
             if result['all'] != 0:
                 wer = float(result['ins'] + result['sub'] +
@@ -486,6 +526,18 @@ if __name__ == '__main__':
                 print('\n', end='\n')
                 lab1 = lab2
                 rec1 = rec2
+            if hotword_seqs and lab_hw_tokens and rec_hw_tokens:
+                if result_hotword['all'] != 0:
+                    wer_hotword = float(result_hotword['ins'] + result_hotword['sub'] +
+                                        result_hotword['del']) * 100.0 / result_hotword['all']
+                else:
+                    wer_hotword = 0.0
+                print('Hotword WER: %4.2f %%' % wer_hotword, end=' ')
+                print('N=%d C=%d S=%d D=%d I=%d' %
+                      (result_hotword['all'], result_hotword['cor'], result_hotword['sub'],
+                       result_hotword['del'], result_hotword['ins']))
+                print('lab-hotword:', ' '.join(lab_hw_tokens))
+                print('rec-hotword:', ' '.join(rec_hw_tokens))
 
     if verbose:
         print(
@@ -503,6 +555,17 @@ if __name__ == '__main__':
     print('N=%d C=%d S=%d D=%d I=%d' %
           (result['all'], result['cor'], result['sub'], result['del'],
            result['ins']))
+    if hotword_seqs:
+        result_hotword = calculator_hotword.overall()
+        if result_hotword['all'] != 0:
+            wer_hotword = float(result_hotword['ins'] + result_hotword['sub'] +
+                                result_hotword['del']) * 100.0 / result_hotword['all']
+        else:
+            wer_hotword = 0.0
+        print('Hotword Overall -> %4.2f %%' % wer_hotword, end=' ')
+        print('N=%d C=%d S=%d D=%d I=%d' %
+              (result_hotword['all'], result_hotword['cor'], result_hotword['sub'],
+               result_hotword['del'], result_hotword['ins']))
     if not verbose:
         print()
 

@@ -254,6 +254,7 @@ def attention_beam_search(
     beam_size: int = 10,
     length_penalty: float = 0.0,
     infos: Dict[str, List[str]] = None,
+    context_graph: ContextGraph = None,
 ) -> List[DecodeResult]:
     device = encoder_out.device
     batch_size = encoder_out.shape[0]
@@ -262,6 +263,11 @@ def attention_beam_search(
     maxlen = encoder_out.size(1)
     encoder_dim = encoder_out.size(2)
     running_size = batch_size * beam_size
+
+    # -------- 新增：热词支持 --------
+    ctx_states = [context_graph.root] * running_size if context_graph is not None else [None] * running_size
+    # --------------------------------------------------
+
     if getattr(model, 'special_tokens', None) is not None \
             and "transcribe" in model.special_tokens:
         tasks, langs = infos["tasks"], infos["langs"]
@@ -308,6 +314,19 @@ def attention_beam_search(
                                               hyps_mask, cache)
         # 2.2 First beam prune: select topk best prob at current time
         top_k_logp, top_k_index = logp.topk(beam_size)  # (B*N, N)
+
+        # -------- 新增：为每个候选 token 加热词 bonus --------
+        if context_graph is not None:
+            bonus = torch.zeros_like(top_k_logp)
+            for bi in range(running_size):
+                st = ctx_states[bi]
+                for ki in range(beam_size):
+                    tok = top_k_index[bi, ki].item()
+                    b, _ = context_graph.forward_one_step(st, tok)
+                    bonus[bi, ki] = b
+            top_k_logp = top_k_logp + bonus
+        # --------------------------------------------------
+
         top_k_logp = mask_finished_scores(top_k_logp, end_flag)
         top_k_index = mask_finished_preds(top_k_index, end_flag, model.eos)
         # 2.3 Second beam prune: select topk score with history
@@ -345,9 +364,25 @@ def attention_beam_search(
         hyps = torch.cat((last_best_k_hyps, best_k_pred.view(-1, 1)),
                          dim=1)  # (B*N, i+1)
 
+        # -------- 新增：同步热词状态 --------
+        if context_graph is not None:
+            new_ctx_states = []
+            for parent_idx, tok in zip(best_hyps_index.tolist(),
+                                       best_k_pred.tolist()):
+                _, nxt = context_graph.forward_one_step(ctx_states[parent_idx], tok)
+                new_ctx_states.append(nxt)
+            ctx_states = new_ctx_states
+        # --------------------------------------------------
+
         # 2.6 Update end flag
         end_flag = torch.eq(hyps[:, -1], model.eos).view(-1, 1)
 
+    if context_graph is not None:
+        backoffs = torch.zeros(running_size, device=device)
+        for idx, st in enumerate(ctx_states):
+            b_off, _ = context_graph.finalize(st)
+            backoffs[idx] = b_off
+        scores = scores + backoffs.view(-1, 1)
     # 3. Select best of best
     scores = scores.view(batch_size, beam_size)
     lengths = hyps.ne(model.eos).sum(dim=1).view(batch_size, beam_size).float()
