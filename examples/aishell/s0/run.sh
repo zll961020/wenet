@@ -13,7 +13,9 @@ else
 fi
 # You can also manually specify CUDA_VISIBLE_DEVICES
 # if you don't want to utilize all available GPU resources.
-export CUDA_VISIBLE_DEVICES="${gpu_list}"
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+export CUDA_VISIBLE_DEVICES=1,2,3
+#export CUDA_VISIBLE_DEVICES="${gpu_list}"
 echo "CUDA_VISIBLE_DEVICES is ${CUDA_VISIBLE_DEVICES}"
 
 stage=0 # start from 0 if you need to start from data preparation
@@ -27,7 +29,7 @@ job_id=2023
 
 # The aishell dataset location, please change this to your own path
 # make sure of using absolute path. DO-NOT-USE relatvie path!
-data=/export/data/asr-data/OpenSLR/33/
+data=/data/asr-data/OpenSLR/33/
 data_url=www.openslr.org/resources/33
 
 nj=16
