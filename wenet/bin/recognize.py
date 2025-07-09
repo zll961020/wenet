@@ -31,7 +31,7 @@ from wenet.utils.init_tokenizer import init_tokenizer
 from wenet.utils.context_graph import ContextGraph
 from wenet.utils.ctc_utils import get_blank_id
 from wenet.utils.common import TORCH_NPU_AVAILABLE  # noqa just ensure to check torch-npu
-
+from typing import Dict, Set
 
 def get_args():
     parser = argparse.ArgumentParser(description='recognize with your model')
@@ -194,9 +194,7 @@ def get_args():
 
 def main():
     args = get_args()
-    # logging.basicConfig(level=logging.DEBUG,
-    #                     format='%(asctime)s %(levelname)s %(message)s')
-    # ---- 日志文件 ----
+     # ---- 日志文件 ----
     os.makedirs(args.result_dir, exist_ok=True)
     log_file = os.path.join(
         args.result_dir,
@@ -210,6 +208,33 @@ def main():
             logging.StreamHandler(sys.stdout)
         ])
     logging.info("Arguments: %s", args)
+    # ---------- 断点恢复：按 mode 收集已处理 key，再取交集 ----------
+    processed_by_mode: Dict[str, Set[str]] = {}
+    for m in (args.modes or []):
+        mode_text = os.path.join(args.result_dir, m, 'text')
+        keys: Set[str] = set()
+        if os.path.exists(mode_text):
+            with open(mode_text, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if line.strip():
+                        keys.add(line.split()[0])
+        processed_by_mode[m] = keys
+    # 取所有 mode key 集合的交集
+    processed_keys: Set[str] = set.intersection(*processed_by_mode.values()) if processed_by_mode else set()
+
+    # 概要：每个 mode 完成条数
+    logging.info('Processed key summary per mode (counts): %s',
+                {m: len(k) for m, k in processed_by_mode.items()})
+    # 明细：每个 mode 的 key 列表（这里只展示前 20 个，防止日志过大）
+    for m, ks in processed_by_mode.items():
+        sample_show = list(ks)[:20]         # 如需完整可去掉 [:20]
+        logging.info('  %s: %d keys, sample -> %s',
+                    m, len(ks), sample_show)
+    # 交集信息
+    logging.info('Common processed keys = %d', len(processed_keys))
+    # ---------------------------------------------------
+   
+   
     if args.gpu != -1:
         # remain the original usage of gpu
         args.device = "cuda"
@@ -250,6 +275,12 @@ def main():
                            tokenizer,
                            test_conf,
                            partition=False)
+    # ... 构造 test_dataset 后 ...
+    if processed_keys:
+        # 若一个 batch 内所有 key 都在 processed_keys 中，则跳过该 batch
+        test_dataset = test_dataset.filter(
+        lambda batch, processed_keys=processed_keys:
+        not set(batch['keys']).issubset(processed_keys))
 
     test_data_loader = DataLoader(test_dataset,
                                   batch_size=None,
@@ -288,7 +319,9 @@ def main():
         dir_name = os.path.join(args.result_dir, mode)
         os.makedirs(dir_name, exist_ok=True)
         file_name = os.path.join(dir_name, 'text')
-        files[mode] = open(file_name, 'w')
+        #files[mode] = open(file_name, 'w')
+        open_mode = 'a' if os.path.exists(file_name) else 'w'
+        files[mode] = open(file_name, open_mode)
     max_format_len = max([len(mode) for mode in args.modes])
 
     with torch.cuda.amp.autocast(enabled=True,
