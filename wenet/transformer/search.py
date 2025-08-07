@@ -147,18 +147,20 @@ def ctc_prefix_beam_search(
                                  context_state=None if context_graph is None
                                  else context_graph.root,
                                  context_score=0.0))]
-        # 2. CTC beam search step by step
-        for t in range(0, num_t):
-            logp = ctc_prob[t]  # (vocab_size,)
+        # 2. CTC beam search step by step 逐帧遍历
+        for t in range(0, num_t): # 遍历每个时间步
+            logp = ctc_prob[t]  # (vocab_size,) # 一次拿到在所有词表的概率得分 
             # key: prefix, value: PrefixScore
             next_hyps = defaultdict(lambda: PrefixScore())
             # 2.1 First beam prune: select topk best
-            top_k_logp, top_k_index = logp.topk(beam_size)  # (beam_size,)
+            top_k_logp, top_k_index = logp.topk(beam_size)  # (beam_size,) # 拿到beam_size个概率最高的词
             for u in top_k_index:
-                u = u.item()
-                prob = logp[u].item()
-                for prefix, prefix_score in cur_hyps:
-                    last = prefix[-1] if len(prefix) > 0 else None
+                u = u.item() # 拿当前词的索引 token id 
+                prob = logp[u].item() # 拿到当前词的概率得分
+                # 遍历上一帧保留下来的每个前缀 
+                for prefix, prefix_score in cur_hyps: 
+                    last = prefix[-1] if len(prefix) > 0 else None # 拿到前一个词
+                    # 生成三种拓展
                     if u == blank_id:  # blank
                         next_score = next_hyps[prefix]
                         next_score.s = log_add(next_score.s,
@@ -216,7 +218,8 @@ def ctc_prefix_beam_search(
                                                       prefix_score, u)
                             next_score.has_context = True
 
-            # 2.2 Second beam prune
+            # 2.2 Second beam prune 按total_score排序，保留beam_size个.
+            # toal_score里再上面拓展路径时已经加了context socre
             next_hyps = sorted(next_hyps.items(),
                                key=lambda x: x[1].total_score(),
                                reverse=True)
@@ -319,7 +322,7 @@ def attention_beam_search(
         if context_graph is not None:
             bonus = torch.zeros_like(top_k_logp)
             for bi in range(running_size):
-                st = ctx_states[bi]
+                st = ctx_states[bi] # 只维持B*N个context state
                 for ki in range(beam_size):
                     tok = top_k_index[bi, ki].item()
                     b, _ = context_graph.forward_one_step(st, tok)
