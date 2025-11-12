@@ -194,7 +194,7 @@ def get_args():
 
 def main():
     args = get_args()
-     # ---- 日志文件 ----
+     # ---- ��־�ļ� ----
     os.makedirs(args.result_dir, exist_ok=True)
     log_file = os.path.join(
         args.result_dir,
@@ -208,7 +208,7 @@ def main():
             logging.StreamHandler(sys.stdout)
         ])
     logging.info("Arguments: %s", args)
-    # ---------- 断点恢复：按 mode 收集已处理 key，再取交集 ----------
+    # ---------- �ϵ�ָ����� mode �ռ��Ѵ��� key����ȡ���� ----------
     processed_by_mode: Dict[str, Set[str]] = {}
     for m in (args.modes or []):
         mode_text = os.path.join(args.result_dir, m, 'text')
@@ -219,18 +219,18 @@ def main():
                     if line.strip():
                         keys.add(line.split()[0])
         processed_by_mode[m] = keys
-    # 取所有 mode key 集合的交集
+    # ȡ���� mode key ���ϵĽ���
     processed_keys: Set[str] = set.intersection(*processed_by_mode.values()) if processed_by_mode else set()
 
-    # 概要：每个 mode 完成条数
+    # ��Ҫ��ÿ�� mode �������
     logging.info('Processed key summary per mode (counts): %s',
                 {m: len(k) for m, k in processed_by_mode.items()})
-    # 明细：每个 mode 的 key 列表（这里只展示前 20 个，防止日志过大）
+    # ��ϸ��ÿ�� mode �� key �б�������ֻչʾǰ 20 ������ֹ��־����
     for m, ks in processed_by_mode.items():
-        sample_show = list(ks)[:20]         # 如需完整可去掉 [:20]
+        sample_show = list(ks)[:20]         # ����������ȥ�� [:20]
         logging.info('  %s: %d keys, sample -> %s',
                     m, len(ks), sample_show)
-    # 交集信息
+    # ������Ϣ
     logging.info('Common processed keys = %d', len(processed_keys))
     # ---------------------------------------------------
    
@@ -275,9 +275,9 @@ def main():
                            tokenizer,
                            test_conf,
                            partition=False)
-    # ... 构造 test_dataset 后 ...
+    # ... ���� test_dataset �� ...
     if processed_keys:
-        # 若一个 batch 内所有 key 都在 processed_keys 中，则跳过该 batch
+        # ��һ�� batch ������ key ���� processed_keys �У��������� batch
         test_dataset = test_dataset.filter(
         lambda batch, processed_keys=processed_keys:
         not set(batch['keys']).issubset(processed_keys))
@@ -319,11 +319,10 @@ def main():
         dir_name = os.path.join(args.result_dir, mode)
         os.makedirs(dir_name, exist_ok=True)
         file_name = os.path.join(dir_name, 'text')
-        #files[mode] = open(file_name, 'w')
         open_mode = 'a' if os.path.exists(file_name) else 'w'
-        files[mode] = open(file_name, open_mode)
+        files[mode] = open(file_name, open_mode, encoding='utf-8')
     max_format_len = max([len(mode) for mode in args.modes])
-
+    
     with torch.cuda.amp.autocast(enabled=True,
                                  dtype=dtype,
                                  cache_enabled=False):
