@@ -194,7 +194,7 @@ def get_args():
 
 def main():
     args = get_args()
-     # ---- ��־�ļ� ----
+    # create log file 
     os.makedirs(args.result_dir, exist_ok=True)
     log_file = os.path.join(
         args.result_dir,
@@ -208,7 +208,7 @@ def main():
             logging.StreamHandler(sys.stdout)
         ])
     logging.info("Arguments: %s", args)
-    # ---------- �ϵ�ָ����� mode �ռ��Ѵ��� key����ȡ���� ----------
+    #resume from breakpoint: collect processed keys according to different modes, then get intersection set
     processed_by_mode: Dict[str, Set[str]] = {}
     for m in (args.modes or []):
         mode_text = os.path.join(args.result_dir, m, 'text')
@@ -219,18 +219,18 @@ def main():
                     if line.strip():
                         keys.add(line.split()[0])
         processed_by_mode[m] = keys
-    # ȡ���� mode key ���ϵĽ���
+    # get all mode key's intersection set
     processed_keys: Set[str] = set.intersection(*processed_by_mode.values()) if processed_by_mode else set()
 
-    # ��Ҫ��ÿ�� mode �������
+    # summary: completed items of each mode 
     logging.info('Processed key summary per mode (counts): %s',
                 {m: len(k) for m, k in processed_by_mode.items()})
-    # ��ϸ��ÿ�� mode �� key �б�������ֻչʾǰ 20 ������ֹ��־����
+    # details: sample keys of each mode (only display up to 20 keys, avoid too many)
     for m, ks in processed_by_mode.items():
-        sample_show = list(ks)[:20]         # ����������ȥ�� [:20]
+        sample_show = list(ks)[:20]         # if wants get all, remove [:20]
         logging.info('  %s: %d keys, sample -> %s',
                     m, len(ks), sample_show)
-    # ������Ϣ
+    # intersection set count
     logging.info('Common processed keys = %d', len(processed_keys))
     # ---------------------------------------------------
    
@@ -275,9 +275,9 @@ def main():
                            tokenizer,
                            test_conf,
                            partition=False)
-    # ... ���� test_dataset �� ...
+    # after create test_dataset
     if processed_keys:
-        # ��һ�� batch ������ key ���� processed_keys �У��������� batch
+        # skip the batch if all keys in the batch have been processed
         test_dataset = test_dataset.filter(
         lambda batch, processed_keys=processed_keys:
         not set(batch['keys']).issubset(processed_keys))
