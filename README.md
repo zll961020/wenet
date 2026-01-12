@@ -2,6 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-brightgreen.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python-Version](https://img.shields.io/badge/Python-3.7%7C3.8-brightgreen)](https://github.com/wenet-e2e/wenet)
+[![WeChat](https://img.shields.io/badge/WeChat-07C160?style=flat&logo=wechat&logoColor=white)](#discussion--communication)
 
 [**Roadmap**](https://github.com/wenet-e2e/wenet/issues/1683)
 | [**Docs**](https://wenet-e2e.github.io/wenet)
@@ -138,8 +139,8 @@ For Chinese users, you can also scan the QR code on the left to follow our offic
 We created a WeChat group for better discussion and quicker response.
 Please scan the personal QR code on the right, and the guy is responsible for inviting you to the chat group.
 
-| <img src="https://github.com/robin1001/qr/blob/master/wenet.jpeg" width="250px"> | <img src="https://github.com/robin1001/qr/blob/master/binbin.jpeg" width="250px"> |
-| ---- | ---- |
+| <img src="https://github.com/robin1001/qr/blob/master/wenet.jpeg" width="250px"> |<img src="https://github.com/robin1001/qr/blob/master/chengdong.jpg" width="250px">| <img src="https://github.com/robin1001/qr/blob/master/binbin.jpeg" width="250px"> |
+| ---- | ---- | ---- |
 
 
 ## Acknowledge
